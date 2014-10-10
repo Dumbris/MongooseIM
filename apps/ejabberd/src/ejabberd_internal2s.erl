@@ -64,19 +64,11 @@
 
 %% pres_a contains all the presence available send (either through roster mechanism or directed).
 %% Directed presence unavailable remove user from pres_a.
--record(state, {socket,
-    sockmod :: ejabberd:sockmod(),
-    socket_monitor,
+-record(state, { send_fun,
     xml_socket,
     streamid,
-    sasl_state,
     access,
     shaper,
-    zlib = {false, 0} :: {boolean(), integer()},
-    tls = false :: boolean(),
-    tls_required = false :: boolean(),
-    tls_enabled = false :: boolean(),
-    tls_options = [],
     authenticated = false :: boolean(),
     jid :: ejabberd:jid(),
     user = <<>> :: ejabberd:user(),
@@ -93,7 +85,6 @@
     pres_invis = false :: boolean(),
     privacy_list = #userlist{} :: mod_privacy:userlist(),
     conn = unknown,
-    auth_module :: ejabberd_auth:authmodule(),
     ip :: inet:ip_address(),
     aux_fields = [] :: [{aux_key(), aux_value()}],
     lang :: ejabberd:lang(),
@@ -256,7 +247,7 @@ stop(FsmRef) ->
 %%          ignore                              |
 %%          {stop, StopReason}
 %%----------------------------------------------------------------------
-init([{SockMod, Socket}, Opts]) ->
+init([Send_fun, IP, Opts]) ->
     Access = case lists:keyfind(access, 1, Opts) of
                  {_, A} -> A;
                  _ -> all
@@ -270,7 +261,6 @@ init([{SockMod, Socket}, Opts]) ->
             {_, XS} -> XS;
             _ -> false
         end,
-    IP = peerip(SockMod, Socket),
     %% Check if IP is blacklisted:
     case is_ip_blacklisted(IP) of
         true ->
@@ -278,10 +268,8 @@ init([{SockMod, Socket}, Opts]) ->
                 [jlib:ip_to_list(IP), IP]),
             {stop, normal};
         false ->
-            SocketMonitor = SockMod:monitor(Socket),
-            {ok, configure_client, #state{socket = Socket,
-                sockmod = SockMod,
-                socket_monitor = SocketMonitor,
+            {ok, configure_client, #state{
+                send_fun = Send_fun,
                 xml_socket = XMLSocket,
                 streamid = new_id(),
                 access = Access,
@@ -1703,9 +1691,6 @@ handle_info({route, From, To, Packet}, StateName, StateData) ->
             ejabberd_hooks:run(c2s_loop_debug, [{route, From, To, Packet}]),
             fsm_next_state(StateName, NewState)
     end;
-handle_info({'DOWN', Monitor, _Type, _Object, _Info}, _StateName, StateData)
-    when Monitor == StateData#state.socket_monitor ->
-    maybe_enter_resume_session(StateData#state.stream_mgmt_id, StateData);
 handle_info(system_shutdown, StateName, StateData) ->
     case StateName of
         wait_for_stream ->
@@ -2024,18 +2009,10 @@ get_auth_tags([], U, P, D, R) ->
 
 -spec get_conn_type(state()) -> conntype().
 get_conn_type(StateData) ->
-    case (StateData#state.sockmod):get_sockmod(StateData#state.socket) of
-        gen_tcp -> c2s;
-        ejabberd_tls -> c2s_tls;
-        ejabberd_zlib ->
-            case ejabberd_zlib:get_sockmod((StateData#state.socket)#socket_state.socket) of
-                gen_tcp -> c2s_compressed;
-                ejabberd_tls -> c2s_compressed_tls
-            end;
-        ejabberd_http_poll -> http_poll;
-        ejabberd_http_bind -> http_bind;
-        _ -> unknown
-    end.
+    internal.
+    %case (StateData#state.sockmod):get_sockmod(StateData#state.socket) of
+    %    _ -> unknown
+    %end.
 
 
 -spec process_presence_probe(From :: ejabberd:simple_jid() | ejabberd:jid(),
