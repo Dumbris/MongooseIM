@@ -99,3 +99,4 @@ erl_crash.dump
 *.iml
 relx
 .eunit
+2commits.sh
