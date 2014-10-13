@@ -100,3 +100,5 @@ erl_crash.dump
 relx
 .eunit
 2commits.sh
+apps/ac_xmpp_convert
+apps/mod_ac_chat
